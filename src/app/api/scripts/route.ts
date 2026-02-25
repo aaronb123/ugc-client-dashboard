@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+// Primal Queen brand ID from Notion
+const PRIMAL_QUEEN_BRAND_ID = "262c239d-6afc-80fe-8908-d8d9b395e7c5";
+
 export async function GET() {
   try {
     const databaseId = process.env.NOTION_DATABASE_ID;
@@ -23,6 +26,7 @@ export async function GET() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          page_size: 100,
           sorts: [
             {
               timestamp: "created_time",
@@ -44,65 +48,73 @@ export async function GET() {
 
     const data = await response.json();
 
-    // Debug: log first result's properties
-    if (data.results.length > 0) {
-      console.log("Property names:", Object.keys(data.results[0].properties));
-    }
-
     const scripts = data.results
       .map((page: any) => {
         const properties = page.properties;
 
-        // Get the Concept Name - check multiple possible property types
+        // Get the Concept Name (title field)
         let title = "Untitled";
         const conceptName = properties["Concept Name"];
-
         if (conceptName?.title?.[0]?.plain_text) {
           title = conceptName.title[0].plain_text;
-        } else if (conceptName?.rich_text?.[0]?.plain_text) {
-          title = conceptName.rich_text[0].plain_text;
-        } else {
-          // Fallback: find any title-type property
-          for (const key of Object.keys(properties)) {
-            const prop = properties[key];
-            if (prop?.title?.[0]?.plain_text) {
-              title = prop.title[0].plain_text;
-              break;
-            }
-          }
         }
 
         // Get the Director's Script URL
         let url = null;
         const scriptProp = properties["Director's Script"];
-
         if (scriptProp?.url) {
           url = scriptProp.url;
-        } else if (scriptProp?.rich_text?.[0]?.plain_text) {
-          // Sometimes URLs are stored as rich_text
-          const text = scriptProp.rich_text[0].plain_text;
-          if (text.startsWith("http")) {
-            url = text;
+        }
+
+        // Get the Concept Type (formula field - returns "UGC", "High Production", etc.)
+        let conceptType = "";
+        const conceptTypeProp = properties["Concept Type"];
+        if (conceptTypeProp?.formula?.string) {
+          conceptType = conceptTypeProp.formula.string;
+        }
+
+        // Get the Brand relation IDs
+        const brandIds: string[] = [];
+        const brandProp = properties["Brand"];
+        if (brandProp?.relation) {
+          for (const rel of brandProp.relation) {
+            brandIds.push(rel.id);
           }
+        }
+
+        // Get the Batch (select field)
+        let batch = "";
+        const batchProp = properties["Batch"];
+        if (batchProp?.select?.name) {
+          batch = batchProp.select.name;
         }
 
         return {
           id: page.id,
           title,
           url,
+          conceptType,
+          brandIds,
+          batch,
           createdTime: page.created_time,
         };
       })
-      // Filter: UGC scripts, Primal Queen (PQ), NOT Batch 11, with Director's Script link
+      // Filter: UGC, Primal Queen brand, NOT Batch 11, has Director's Script
       .filter((script: any) => {
-        const name = script.title.toUpperCase();
-        const isUGC = name.includes("UGC");
-        const isPrimalQueen = name.includes("PQ");
-        const isNotBatch11 = !name.includes("PQ11");
+        const isUGC = script.conceptType === "UGC";
+        const isPrimalQueen = script.brandIds.includes(PRIMAL_QUEEN_BRAND_ID);
+        const isNotBatch11 = script.batch !== "Batch 11";
         const hasLink = !!script.url;
 
         return isUGC && isPrimalQueen && isNotBatch11 && hasLink;
-      });
+      })
+      // Only return needed fields
+      .map((script: any) => ({
+        id: script.id,
+        title: script.title,
+        url: script.url,
+        batch: script.batch,
+      }));
 
     return NextResponse.json({ scripts });
   } catch (error: any) {
