@@ -44,30 +44,46 @@ export async function GET() {
 
     const data = await response.json();
 
+    // Debug: log first result's properties
+    if (data.results.length > 0) {
+      console.log("Property names:", Object.keys(data.results[0].properties));
+    }
+
     const scripts = data.results
       .map((page: any) => {
         const properties = page.properties;
 
-        // Get the Concept Name
+        // Get the Concept Name - check multiple possible property types
         let title = "Untitled";
-        const titleProp =
-          properties["Concept Name"] ||
-          properties.Name ||
-          properties.Title ||
-          properties.name;
+        const conceptName = properties["Concept Name"];
 
-        if (titleProp?.title?.[0]?.plain_text) {
-          title = titleProp.title[0].plain_text;
-        } else if (titleProp?.rich_text?.[0]?.plain_text) {
-          title = titleProp.rich_text[0].plain_text;
+        if (conceptName?.title?.[0]?.plain_text) {
+          title = conceptName.title[0].plain_text;
+        } else if (conceptName?.rich_text?.[0]?.plain_text) {
+          title = conceptName.rich_text[0].plain_text;
+        } else {
+          // Fallback: find any title-type property
+          for (const key of Object.keys(properties)) {
+            const prop = properties[key];
+            if (prop?.title?.[0]?.plain_text) {
+              title = prop.title[0].plain_text;
+              break;
+            }
+          }
         }
 
         // Get the Director's Script URL
         let url = null;
-        const urlProp = properties["Director's Script"];
+        const scriptProp = properties["Director's Script"];
 
-        if (urlProp?.url) {
-          url = urlProp.url;
+        if (scriptProp?.url) {
+          url = scriptProp.url;
+        } else if (scriptProp?.rich_text?.[0]?.plain_text) {
+          // Sometimes URLs are stored as rich_text
+          const text = scriptProp.rich_text[0].plain_text;
+          if (text.startsWith("http")) {
+            url = text;
+          }
         }
 
         return {
@@ -77,10 +93,16 @@ export async function GET() {
           createdTime: page.created_time,
         };
       })
-      // Only show scripts with "UGC" in the name AND have a Director's Script link
-      .filter((script: any) =>
-        script.title.toUpperCase().includes("UGC") && script.url
-      );
+      // Filter: UGC scripts, Primal Queen (PQ), NOT Batch 11, with Director's Script link
+      .filter((script: any) => {
+        const name = script.title.toUpperCase();
+        const isUGC = name.includes("UGC");
+        const isPrimalQueen = name.includes("PQ");
+        const isNotBatch11 = !name.includes("PQ11");
+        const hasLink = !!script.url;
+
+        return isUGC && isPrimalQueen && isNotBatch11 && hasLink;
+      });
 
     return NextResponse.json({ scripts });
   } catch (error: any) {
