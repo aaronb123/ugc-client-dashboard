@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 // Primal Queen brand ID from Notion
 const PRIMAL_QUEEN_BRAND_ID = "262c239d-6afc-80fe-8908-d8d9b395e7c5";
 
+export const revalidate = 60; // Cache for 60 seconds
+
 export async function GET() {
   try {
     const databaseId = process.env.NOTION_DATABASE_ID;
@@ -15,7 +17,7 @@ export async function GET() {
       );
     }
 
-    // Fetch all pages using pagination (no server-side filter - filter client-side)
+    // Fetch pages with server-side filter for Primal Queen brand
     let allResults: any[] = [];
     let hasMore = true;
     let startCursor: string | undefined = undefined;
@@ -23,6 +25,12 @@ export async function GET() {
     while (hasMore) {
       const body: any = {
         page_size: 100,
+        filter: {
+          property: "Brand",
+          relation: {
+            contains: PRIMAL_QUEEN_BRAND_ID,
+          },
+        },
         sorts: [
           {
             property: "Concept Name",
@@ -88,15 +96,6 @@ export async function GET() {
           conceptType = conceptTypeProp.formula.string;
         }
 
-        // Get the Brand relation IDs
-        const brandIds: string[] = [];
-        const brandProp = properties["Brand"];
-        if (brandProp?.relation) {
-          for (const rel of brandProp.relation) {
-            brandIds.push(rel.id);
-          }
-        }
-
         // Get the Batch (select field)
         let batch = "";
         const batchProp = properties["Batch"];
@@ -109,18 +108,16 @@ export async function GET() {
           title,
           url,
           conceptType,
-          brandIds,
           batch,
         };
       })
-      // Filter: UGC, Primal Queen brand, NOT Batch 11, has Director's Script
+      // Filter: UGC type, NOT Batch 11, has Director's Script
       .filter((script: any) => {
         const isUGC = script.conceptType === "UGC";
-        const isPrimalQueen = script.brandIds.includes(PRIMAL_QUEEN_BRAND_ID);
         const isNotBatch11 = script.batch !== "Batch 11";
         const hasLink = !!script.url;
 
-        return isUGC && isPrimalQueen && isNotBatch11 && hasLink;
+        return isUGC && isNotBatch11 && hasLink;
       })
       // Only return needed fields
       .map((script: any) => ({
