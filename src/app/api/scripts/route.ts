@@ -15,12 +15,26 @@ export async function GET() {
       );
     }
 
-    // Fetch all pages using pagination
+    // Fetch all pages using pagination (no server-side filter - filter client-side)
     let allResults: any[] = [];
     let hasMore = true;
     let startCursor: string | undefined = undefined;
 
     while (hasMore) {
+      const body: any = {
+        page_size: 100,
+        sorts: [
+          {
+            property: "Concept Name",
+            direction: "ascending",
+          },
+        ],
+      };
+
+      if (startCursor) {
+        body.start_cursor = startCursor;
+      }
+
       const response = await fetch(
         `https://api.notion.com/v1/databases/${databaseId}/query`,
         {
@@ -30,22 +44,7 @@ export async function GET() {
             "Notion-Version": "2022-06-28",
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            page_size: 100,
-            start_cursor: startCursor,
-            filter: {
-              property: "Brand",
-              relation: {
-                contains: PRIMAL_QUEEN_BRAND_ID,
-              },
-            },
-            sorts: [
-              {
-                property: "Concept Name",
-                direction: "ascending",
-              },
-            ],
-          }),
+          body: JSON.stringify(body),
         }
       );
 
@@ -82,11 +81,20 @@ export async function GET() {
           url = scriptProp.url;
         }
 
-        // Get the Concept Type (formula field - returns "UGC", "High Production", etc.)
+        // Get the Concept Type (formula field)
         let conceptType = "";
         const conceptTypeProp = properties["Concept Type"];
         if (conceptTypeProp?.formula?.string) {
           conceptType = conceptTypeProp.formula.string;
+        }
+
+        // Get the Brand relation IDs
+        const brandIds: string[] = [];
+        const brandProp = properties["Brand"];
+        if (brandProp?.relation) {
+          for (const rel of brandProp.relation) {
+            brandIds.push(rel.id);
+          }
         }
 
         // Get the Batch (select field)
@@ -101,16 +109,18 @@ export async function GET() {
           title,
           url,
           conceptType,
+          brandIds,
           batch,
         };
       })
-      // Filter: UGC type, NOT Batch 11, has Director's Script
+      // Filter: UGC, Primal Queen brand, NOT Batch 11, has Director's Script
       .filter((script: any) => {
         const isUGC = script.conceptType === "UGC";
+        const isPrimalQueen = script.brandIds.includes(PRIMAL_QUEEN_BRAND_ID);
         const isNotBatch11 = script.batch !== "Batch 11";
         const hasLink = !!script.url;
 
-        return isUGC && isNotBatch11 && hasLink;
+        return isUGC && isPrimalQueen && isNotBatch11 && hasLink;
       })
       // Only return needed fields
       .map((script: any) => ({
