@@ -15,40 +15,56 @@ export async function GET() {
       );
     }
 
-    // Query the Notion database directly via API
-    const response = await fetch(
-      `https://api.notion.com/v1/databases/${databaseId}/query`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Notion-Version": "2022-06-28",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          page_size: 100,
-          sorts: [
-            {
-              timestamp: "created_time",
-              direction: "descending",
-            },
-          ],
-        }),
-      }
-    );
+    // Fetch all pages using pagination
+    let allResults: any[] = [];
+    let hasMore = true;
+    let startCursor: string | undefined = undefined;
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Notion API error:", errorData);
-      return NextResponse.json(
-        { error: errorData.message || "Failed to fetch from Notion" },
-        { status: response.status }
+    while (hasMore) {
+      const response = await fetch(
+        `https://api.notion.com/v1/databases/${databaseId}/query`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            page_size: 100,
+            start_cursor: startCursor,
+            filter: {
+              property: "Brand",
+              relation: {
+                contains: PRIMAL_QUEEN_BRAND_ID,
+              },
+            },
+            sorts: [
+              {
+                property: "Concept Name",
+                direction: "ascending",
+              },
+            ],
+          }),
+        }
       );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Notion API error:", errorData);
+        return NextResponse.json(
+          { error: errorData.message || "Failed to fetch from Notion" },
+          { status: response.status }
+        );
+      }
+
+      const data = await response.json();
+      allResults = allResults.concat(data.results);
+      hasMore = data.has_more;
+      startCursor = data.next_cursor;
     }
 
-    const data = await response.json();
-
-    const scripts = data.results
+    const scripts = allResults
       .map((page: any) => {
         const properties = page.properties;
 
@@ -73,15 +89,6 @@ export async function GET() {
           conceptType = conceptTypeProp.formula.string;
         }
 
-        // Get the Brand relation IDs
-        const brandIds: string[] = [];
-        const brandProp = properties["Brand"];
-        if (brandProp?.relation) {
-          for (const rel of brandProp.relation) {
-            brandIds.push(rel.id);
-          }
-        }
-
         // Get the Batch (select field)
         let batch = "";
         const batchProp = properties["Batch"];
@@ -94,19 +101,16 @@ export async function GET() {
           title,
           url,
           conceptType,
-          brandIds,
           batch,
-          createdTime: page.created_time,
         };
       })
-      // Filter: UGC, Primal Queen brand, NOT Batch 11, has Director's Script
+      // Filter: UGC type, NOT Batch 11, has Director's Script
       .filter((script: any) => {
         const isUGC = script.conceptType === "UGC";
-        const isPrimalQueen = script.brandIds.includes(PRIMAL_QUEEN_BRAND_ID);
         const isNotBatch11 = script.batch !== "Batch 11";
         const hasLink = !!script.url;
 
-        return isUGC && isPrimalQueen && isNotBatch11 && hasLink;
+        return isUGC && isNotBatch11 && hasLink;
       })
       // Only return needed fields
       .map((script: any) => ({
