@@ -48,28 +48,23 @@ export async function GET() {
       .map((page: any) => {
         const properties = page.properties;
 
-        // Get the title - try common property names
+        // Get the Concept Name
         let title = "Untitled";
         const titleProp =
+          properties["Concept Name"] ||
           properties.Name ||
           properties.Title ||
-          properties["Script Name"] ||
-          properties.name ||
-          properties.title;
+          properties.name;
 
         if (titleProp?.title?.[0]?.plain_text) {
           title = titleProp.title[0].plain_text;
+        } else if (titleProp?.rich_text?.[0]?.plain_text) {
+          title = titleProp.rich_text[0].plain_text;
         }
 
-        // Get the URL - try common property names
+        // Get the Director's Script URL
         let url = null;
-        const urlProp =
-          properties.URL ||
-          properties.Link ||
-          properties["Doc Link"] ||
-          properties["Google Doc"] ||
-          properties.url ||
-          properties.link;
+        const urlProp = properties["Director's Script"];
 
         if (urlProp?.url) {
           url = urlProp.url;
@@ -82,9 +77,9 @@ export async function GET() {
           createdTime: page.created_time,
         };
       })
-      // Only show scripts with "UGC" in the name
+      // Only show scripts with "UGC" in the name AND have a Director's Script link
       .filter((script: any) =>
-        script.title.toUpperCase().includes("UGC")
+        script.title.toUpperCase().includes("UGC") && script.url
       );
 
     return NextResponse.json({ scripts });
