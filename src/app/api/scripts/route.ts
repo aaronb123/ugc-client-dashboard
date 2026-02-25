@@ -44,43 +44,48 @@ export async function GET() {
 
     const data = await response.json();
 
-    const scripts = data.results.map((page: any) => {
-      const properties = page.properties;
+    const scripts = data.results
+      .map((page: any) => {
+        const properties = page.properties;
 
-      // Get the title - try common property names
-      let title = "Untitled";
-      const titleProp =
-        properties.Name ||
-        properties.Title ||
-        properties["Script Name"] ||
-        properties.name ||
-        properties.title;
+        // Get the title - try common property names
+        let title = "Untitled";
+        const titleProp =
+          properties.Name ||
+          properties.Title ||
+          properties["Script Name"] ||
+          properties.name ||
+          properties.title;
 
-      if (titleProp?.title?.[0]?.plain_text) {
-        title = titleProp.title[0].plain_text;
-      }
+        if (titleProp?.title?.[0]?.plain_text) {
+          title = titleProp.title[0].plain_text;
+        }
 
-      // Get the URL - try common property names
-      let url = null;
-      const urlProp =
-        properties.URL ||
-        properties.Link ||
-        properties["Doc Link"] ||
-        properties["Google Doc"] ||
-        properties.url ||
-        properties.link;
+        // Get the URL - try common property names
+        let url = null;
+        const urlProp =
+          properties.URL ||
+          properties.Link ||
+          properties["Doc Link"] ||
+          properties["Google Doc"] ||
+          properties.url ||
+          properties.link;
 
-      if (urlProp?.url) {
-        url = urlProp.url;
-      }
+        if (urlProp?.url) {
+          url = urlProp.url;
+        }
 
-      return {
-        id: page.id,
-        title,
-        url,
-        createdTime: page.created_time,
-      };
-    });
+        return {
+          id: page.id,
+          title,
+          url,
+          createdTime: page.created_time,
+        };
+      })
+      // Only show scripts with "UGC" in the name
+      .filter((script: any) =>
+        script.title.toUpperCase().includes("UGC")
+      );
 
     return NextResponse.json({ scripts });
   } catch (error: any) {
