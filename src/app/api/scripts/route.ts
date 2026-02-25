@@ -1,33 +1,50 @@
-import { Client } from "@notionhq/client";
 import { NextResponse } from "next/server";
-
-const notion = new Client({
-  auth: process.env.NOTION_API_KEY,
-});
 
 export async function GET() {
   try {
     const databaseId = process.env.NOTION_DATABASE_ID;
+    const apiKey = process.env.NOTION_API_KEY;
 
-    if (!databaseId) {
+    if (!databaseId || !apiKey) {
       return NextResponse.json(
-        { error: "Database ID not configured" },
+        { error: "Notion credentials not configured" },
         { status: 500 }
       );
     }
 
-    // Query the database for all pages
-    const response = await (notion as any).databases.query({
-      database_id: databaseId,
-      sorts: [
-        {
-          timestamp: "created_time",
-          direction: "descending",
+    // Query the Notion database directly via API
+    const response = await fetch(
+      `https://api.notion.com/v1/databases/${databaseId}/query`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
         },
-      ],
-    });
+        body: JSON.stringify({
+          sorts: [
+            {
+              timestamp: "created_time",
+              direction: "descending",
+            },
+          ],
+        }),
+      }
+    );
 
-    const scripts = response.results.map((page: any) => {
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("Notion API error:", errorData);
+      return NextResponse.json(
+        { error: errorData.message || "Failed to fetch from Notion" },
+        { status: response.status }
+      );
+    }
+
+    const data = await response.json();
+
+    const scripts = data.results.map((page: any) => {
       const properties = page.properties;
 
       // Get the title - try common property names
